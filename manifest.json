@@ -1,0 +1,9 @@
+{
+  "name": "展場電子收據系統",
+  "short_name": "展場訂單",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f7f7fb",
+  "theme_color": "#fb5272",
+  "orientation": "portrait"
+}

@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#fb5272">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="#fb5272">
+    <link rel="manifest" href="manifest.json">
+    <title>展場電子收據系統 (PWA Demo)</title>
+    <style>
+      :root {
+        --primary: #fb5272;
+        --primary-light: #ffd6de;
+        --primary-dark: #e03a5c;
+        --bg: #f7f7fb;
+        --card: #ffffff;
+        --text: #333333;
+        --text-light: #888888;
+        --border: #e0e0e0;
+        --radius: 10px;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        padding: 0 0 40px 0;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      .header {
+        background: var(--primary);
+        color: #fff;
+        text-align: center;
+        padding: 18px 16px;
+        font-size: 20px;
+        font-weight: 700;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+
+      /* 離線橫幅 */
+      .offline-banner {
+        display: none;
+        background: #fff3cd;
+        color: #856404;
+        text-align: center;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        border-bottom: 1px solid #ffc107;
+      }
+      .offline-banner.show { display: block; }
+
+      /* 待送佇列橫幅 */
+      .queue-banner {
+        display: none;
+        background: #d1ecf1;
+        color: #0c5460;
+        text-align: center;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        border-bottom: 1px solid #bee5eb;
+        cursor: pointer;
+      }
+      .queue-banner.show { display: block; }
+
+      .container { max-width: 540px; margin: 0 auto; padding: 12px; }
+
+      .section {
+        background: var(--card);
+        border-radius: var(--radius);
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      }
+
+      .section-title {
+        font-size: 15px; font-weight: 700; color: var(--primary);
+        margin-bottom: 12px; padding-bottom: 8px;
+        border-bottom: 2px solid var(--primary-light);
+      }
+
+      .field { margin-bottom: 12px; }
+      .field:last-child { margin-bottom: 0; }
+      .field label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+      .field label .required { color: var(--primary); margin-left: 2px; }
+
+      .field input, .field select {
+        width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+        border-radius: 8px; font-size: 15px; color: var(--text);
+        background: #fafafa; -webkit-appearance: none; appearance: none;
+      }
+      .field input:focus, .field select:focus {
+        outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light);
+      }
+      .field select {
+        background: #fafafa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center;
+        padding-right: 32px;
+      }
+
+      .phone-group { display: flex; align-items: center; gap: 0; }
+      .phone-prefix {
+        padding: 10px 10px; background: #e8e8e8; border: 1px solid var(--border);
+        border-right: none; border-radius: 8px 0 0 8px;
+        font-size: 15px; font-weight: 600; color: var(--text); flex-shrink: 0;
+      }
+      .phone-group input { border-radius: 0 8px 8px 0 !important; flex: 1; min-width: 0; }
+
+      .btn-submit {
+        width: 100%; padding: 14px; border: none; border-radius: var(--radius);
+        background: var(--primary); color: #fff; font-size: 17px; font-weight: 700;
+        cursor: pointer; margin-top: 8px;
+      }
+      .btn-submit:active { background: var(--primary-dark); }
+      .btn-submit:disabled { background: #ccc; cursor: not-allowed; }
+
+      /* Loading overlay */
+      .overlay { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.9); }
+      .overlay.hidden { display: none; }
+      .spinner { width: 40px; height: 40px; border: 4px solid var(--primary-light); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      .done-box { text-align: center; }
+      .done-box h2 { color: var(--primary); margin-bottom: 8px; }
+      .done-box button { margin-top: 16px; padding: 12px 32px; border: none; border-radius: 8px; background: var(--primary); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+
+      /* 佇列清單 */
+      .queue-list { margin-top: 8px; }
+      .queue-item {
+        background: #f8f9fa; border: 1px solid var(--border); border-radius: 8px;
+        padding: 10px 12px; margin-bottom: 6px; font-size: 13px;
+        display: flex; justify-content: space-between; align-items: center;
+      }
+      .queue-item .info { flex: 1; }
+      .queue-item .status { font-weight: 600; color: var(--text-light); }
+      .queue-item .status.failed { color: #e53935; }
+      .queue-item button {
+        padding: 4px 10px; border: 1px solid var(--primary); border-radius: 6px;
+        background: #fff; color: var(--primary); font-size: 12px; cursor: pointer; margin-left: 8px;
+      }
+
+      .config-status {
+        text-align: center; padding: 8px; font-size: 12px; color: var(--text-light);
+      }
+    </style>
+  </head>
+  <body>
+
+    <div class="header">展場電子收據系統 (PWA Demo)</div>
+    <div id="offlineBanner" class="offline-banner">目前為離線模式，訂單將在恢復連線後自動送出</div>
+    <div id="queueBanner" class="queue-banner" onclick="toggleQueueList()">
+      <span id="queueCount">0</span> 筆訂單等待送出
+    </div>
+
+    <div class="container">
+
+      <!-- 設定載入狀態 -->
+      <div id="configStatus" class="config-status">載入設定中...</div>
+
+      <!-- 表單 -->
+      <div id="formContainer" style="opacity:0.4; pointer-events:none;">
+
+        <div class="section">
+          <div class="section-title">基本資料（Demo）</div>
+
+          <div class="field">
+            <label>訂購人姓名<span class="required">*</span></label>
+            <input type="text" id="customerName" placeholder="請輸入姓名">
+          </div>
+
+          <div class="field">
+            <label>手機號碼<span class="required">*</span></label>
+            <div class="phone-group">
+              <span class="phone-prefix">09</span>
+              <input type="tel" id="phone" maxlength="8" placeholder="12345678" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="field">
+            <label>負責業務<span class="required">*</span></label>
+            <select id="salesPerson">
+              <option value="">載入中...</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 設定資料預覽 -->
+        <div class="section">
+          <div class="section-title">設定資料預覽</div>
+          <div id="configPreview" style="font-size:13px; color:var(--text-light);">尚未載入</div>
+        </div>
+
+        <button class="btn-submit" id="btnSubmit" onclick="handleSubmit()">送出訂單（Demo）</button>
+
+      </div>
+
+      <!-- 離線佇列清單 -->
+      <div id="queueSection" class="section" style="display:none;">
+        <div class="section-title">離線待送訂單</div>
+        <div id="queueList" class="queue-list"></div>
+      </div>
+
+    </div>
+
+    <!-- Loading -->
+    <div id="loadingOverlay" class="overlay hidden">
+      <div style="text-align:center;">
+        <div class="spinner"></div>
+        <p style="margin-top:12px; color:var(--text-light);">訂單處理中...</p>
+      </div>
+    </div>
+
+    <!-- Done -->
+    <div id="doneOverlay" class="overlay hidden">
+      <div class="done-box">
+        <h2>訂單已完成</h2>
+        <p>PDF 收據已生成</p>
+        <button onclick="resetForm()">建立新訂單</button>
+      </div>
+    </div>
+
+    <script>
+      // ============================================================
+      // 設定
+      // ============================================================
+      // 部署後請替換為實際的 GAS Web App deployment URL
+      const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbz3o8_XROmxbfhrN9_tNwS_VlSOyOV8dDQgUYg8jCgFo64yo4d4eeQu8W3zmYdZm6-NEw/exec';
+
+      const OFFLINE_QUEUE_KEY = 'offlineOrderQueue';
+      const CONFIG_CACHE_KEY = 'cachedConfig';
+
+      let configLoaded = false;
+      let configData = null;
+
+      // ============================================================
+      // 載入設定 (getConfig)
+      // ============================================================
+      window.addEventListener('DOMContentLoaded', () => {
+        registerSW();
+        loadConfig();
+        updateOnlineStatus();
+        updateQueueUI();
+      });
+
+      window.addEventListener('online', () => {
+        updateOnlineStatus();
+        retryOfflineQueue();
+      });
+      window.addEventListener('offline', updateOnlineStatus);
+
+      function loadConfig() {
+        document.getElementById('configStatus').textContent = '載入設定中...';
+
+        fetch(GAS_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'getConfig' })
+        })
+        .then(r => r.json())
+        .then(config => {
+          if (config.error) throw new Error(config.error);
+          localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config));
+          applyConfig(config, false);
+        })
+        .catch(err => {
+          console.warn('getConfig failed, trying cache:', err);
+          const cached = localStorage.getItem(CONFIG_CACHE_KEY);
+          if (cached) {
+            applyConfig(JSON.parse(cached), true);
+          } else {
+            document.getElementById('configStatus').textContent =
+              '無法載入設定資料，請確認網路連線後重新整理';
+          }
+        });
+      }
+
+      function applyConfig(config, fromCache) {
+        configData = config;
+        configLoaded = true;
+
+        // 業務員下拉
+        const salesSelect = document.getElementById('salesPerson');
+        salesSelect.innerHTML = '<option value="">請選擇業務員</option>';
+        (config.salesList || []).forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          salesSelect.appendChild(opt);
+        });
+
+        // 設定預覽（驗證用）
+        const preview = document.getElementById('configPreview');
+        const sp = (config.singleProducts || []).length;
+        const cp = (config.comboProducts || []).length;
+        const ec = (config.exhibitionCombos || []).length;
+        const sl = (config.salesList || []).length;
+        preview.innerHTML =
+          `<b>單品：</b>${sp} 項 | <b>固定組合：</b>${cp} 組 | <b>展場組合：</b>${ec} 組 | <b>業務員：</b>${sl} 人` +
+          (fromCache ? '<br><span style="color:#856404;">（使用離線快取資料）</span>' : '');
+
+        // 啟用表單
+        document.getElementById('formContainer').style.opacity = '1';
+        document.getElementById('formContainer').style.pointerEvents = '';
+        document.getElementById('configStatus').textContent =
+          fromCache ? '已從離線快取載入設定' : '設定載入完成';
+      }
+
+      // ============================================================
+      // 送出訂單
+      // ============================================================
+      function handleSubmit() {
+        const name = document.getElementById('customerName').value.trim();
+        const phone = document.getElementById('phone').value.trim();
+        const sales = document.getElementById('salesPerson').value;
+
+        if (!name) return alert('請輸入訂購人姓名');
+        if (phone.length !== 8) return alert('手機號碼需為 8 碼');
+        if (!sales) return alert('請選擇業務員');
+
+        const orderData = {
+          customerName: name,
+          orderDate: new Date().toLocaleDateString('zh-TW'),
+          phone: '09' + phone,
+          email: '',
+          address: 'Demo 測試地址',
+          receiver: name,
+          combo: 'Demo 測試組合',
+          comboPrice: 0,
+          singleItemPrice: 0,
+          allocations: '[]',
+          allocSummary: 'Demo',
+          items: 'Demo 測試品項',
+          lineDiscount: 0,
+          pointsDiscount: 0,
+          amount: 0,
+          deliveryDate1: '',
+          deliveryDate2: '',
+          payMethod: '現金',
+          discounts: '',
+          salesPerson: sales,
+          remarks: 'PWA Demo 測試訂單',
+          signature: createDemoSignature()
+        };
+
+        document.getElementById('loadingOverlay').classList.remove('hidden');
+
+        fetch(GAS_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'processOrder', data: orderData })
+        })
+        .then(r => r.json())
+        .then(result => {
+          if (result.error) throw new Error(result.error);
+          document.getElementById('loadingOverlay').classList.add('hidden');
+          document.getElementById('doneOverlay').classList.remove('hidden');
+        })
+        .catch(err => {
+          document.getElementById('loadingOverlay').classList.add('hidden');
+          if (!navigator.onLine) {
+            addToOfflineQueue(orderData);
+            alert('目前離線，訂單已暫存，恢復連線後將自動送出');
+          } else {
+            alert('訂單處理失敗：' + err.message);
+          }
+        });
+      }
+
+      // Demo 用的空白簽名（1x1 透明 PNG base64）
+      function createDemoSignature() {
+        var canvas = document.createElement('canvas');
+        canvas.width = 200;
+        canvas.height = 100;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ccc';
+        ctx.font = '20px sans-serif';
+        ctx.fillText('Demo', 60, 55);
+        return canvas.toDataURL('image/png');
+      }
+
+      // ============================================================
+      // 離線訂單佇列
+      // ============================================================
+      function getOfflineQueue() {
+        try {
+          return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+        } catch (e) { return []; }
+      }
+
+      function saveOfflineQueue(queue) {
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+      }
+
+      function addToOfflineQueue(orderData) {
+        const queue = getOfflineQueue();
+        queue.push({
+          id: 'local-' + Date.now(),
+          timestamp: Date.now(),
+          customerName: orderData.customerName,
+          phone: orderData.phone,
+          orderData: orderData,
+          status: 'pending',
+          retryCount: 0
+        });
+        saveOfflineQueue(queue);
+        updateQueueUI();
+      }
+
+      function removeFromQueue(id) {
+        const queue = getOfflineQueue().filter(item => item.id !== id);
+        saveOfflineQueue(queue);
+        updateQueueUI();
+      }
+
+      async function retryOfflineQueue() {
+        const queue = getOfflineQueue();
+        const pending = queue.filter(item => item.status === 'pending' || item.status === 'failed');
+        if (pending.length === 0) return;
+
+        for (const item of pending) {
+          try {
+            const response = await fetch(GAS_API_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain' },
+              body: JSON.stringify({ action: 'processOrder', data: item.orderData })
+            });
+            const result = await response.json();
+            if (result.error) throw new Error(result.error);
+
+            // 成功：從佇列移除
+            removeFromQueue(item.id);
+          } catch (err) {
+            // 失敗：更新狀態
+            item.retryCount++;
+            if (item.retryCount > 5) item.status = 'failed';
+            const q = getOfflineQueue();
+            const idx = q.findIndex(x => x.id === item.id);
+            if (idx !== -1) { q[idx] = item; saveOfflineQueue(q); }
+            updateQueueUI();
+          }
+        }
+      }
+
+      function retryOne(id) {
+        const queue = getOfflineQueue();
+        const item = queue.find(x => x.id === id);
+        if (!item) return;
+        item.status = 'pending';
+        item.retryCount = 0;
+        saveOfflineQueue(queue);
+        updateQueueUI();
+        retryOfflineQueue();
+      }
+
+      // ============================================================
+      // UI 更新
+      // ============================================================
+      function updateOnlineStatus() {
+        const banner = document.getElementById('offlineBanner');
+        if (navigator.onLine) {
+          banner.classList.remove('show');
+        } else {
+          banner.classList.add('show');
+        }
+      }
+
+      function updateQueueUI() {
+        const queue = getOfflineQueue();
+        const count = queue.length;
+        const queueBanner = document.getElementById('queueBanner');
+        const queueSection = document.getElementById('queueSection');
+
+        document.getElementById('queueCount').textContent = count;
+
+        if (count > 0) {
+          queueBanner.classList.add('show');
+        } else {
+          queueBanner.classList.remove('show');
+          queueSection.style.display = 'none';
+        }
+
+        // 渲染佇列清單
+        const list = document.getElementById('queueList');
+        list.innerHTML = '';
+        queue.forEach(item => {
+          const time = new Date(item.timestamp).toLocaleString('zh-TW');
+          const isFailed = item.status === 'failed';
+          const div = document.createElement('div');
+          div.className = 'queue-item';
+          div.innerHTML =
+            `<div class="info">
+              <div><b>${item.customerName}</b> | ${item.phone}</div>
+              <div style="font-size:11px;color:var(--text-light);">${time}</div>
+            </div>
+            <span class="status ${isFailed ? 'failed' : ''}">${isFailed ? '失敗' : '等待中'}</span>
+            ${isFailed ? `<button onclick="retryOne('${item.id}')">重試</button>` : ''}`;
+          list.appendChild(div);
+        });
+      }
+
+      function toggleQueueList() {
+        const section = document.getElementById('queueSection');
+        section.style.display = section.style.display === 'none' ? 'block' : 'none';
+      }
+
+      // ============================================================
+      // 重置
+      // ============================================================
+      function resetForm() {
+        document.getElementById('doneOverlay').classList.add('hidden');
+        document.getElementById('customerName').value = '';
+        document.getElementById('phone').value = '';
+        document.getElementById('salesPerson').value = '';
+      }
+
+      // ============================================================
+      // Service Worker 註冊
+      // ============================================================
+      function registerSW() {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('sw.js')
+            .then(reg => console.log('SW registered:', reg.scope))
+            .catch(err => console.warn('SW registration failed:', err));
+        }
+      }
+    </script>
+  </body>
+</html>
