@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="#fb5272">
     <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
     <title>展場電子收據系統 (PWA Demo)</title>
     <style>
       :root {
@@ -148,6 +149,33 @@
       .config-status {
         text-align: center; padding: 8px; font-size: 12px; color: var(--text-light);
       }
+
+      /* 簽名區 */
+      .signature-wrapper {
+        border: 2px dashed var(--border);
+        border-radius: 8px;
+        background: #fff;
+        position: relative;
+        margin-top: 4px;
+      }
+      .signature-wrapper canvas {
+        width: 100%;
+        height: 180px;
+        cursor: crosshair;
+        display: block;
+      }
+      .btn-clear {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 6px 16px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text-light);
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .btn-clear:active { background: #f0f0f0; }
     </style>
   </head>
   <body>
@@ -196,6 +224,15 @@
           <div id="configPreview" style="font-size:13px; color:var(--text-light);">尚未載入</div>
         </div>
 
+        <!-- 顧客簽名 -->
+        <div class="section">
+          <div class="section-title">顧客簽名</div>
+          <div class="signature-wrapper">
+            <canvas id="signature-pad"></canvas>
+          </div>
+          <button type="button" class="btn-clear" onclick="clearCanvas()">清除簽名</button>
+        </div>
+
         <button class="btn-submit" id="btnSubmit" onclick="handleSubmit()">送出訂單（Demo）</button>
 
       </div>
@@ -241,7 +278,28 @@
       // ============================================================
       // 載入設定 (getConfig)
       // ============================================================
+      // ============================================================
+      // 簽名
+      // ============================================================
+      let signaturePad;
+      function initSignaturePad() {
+        const canvas = document.getElementById('signature-pad');
+        signaturePad = new SignaturePad(canvas);
+        resizeCanvas();
+      }
+      function resizeCanvas() {
+        const canvas = document.getElementById('signature-pad');
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        canvas.width = canvas.offsetWidth * ratio;
+        canvas.height = canvas.offsetHeight * ratio;
+        canvas.getContext('2d').scale(ratio, ratio);
+        signaturePad.clear();
+      }
+      function clearCanvas() { signaturePad.clear(); }
+      window.onresize = resizeCanvas;
+
       window.addEventListener('DOMContentLoaded', () => {
+        initSignaturePad();
         registerSW();
         loadConfig();
         updateOnlineStatus();
@@ -322,6 +380,7 @@
         if (!name) return alert('請輸入訂購人姓名');
         if (phone.length !== 8) return alert('手機號碼需為 8 碼');
         if (!sales) return alert('請選擇業務員');
+        if (signaturePad.isEmpty()) return alert('請顧客完成簽名後再送出');
 
         const orderData = {
           customerName: name,
@@ -345,7 +404,7 @@
           discounts: '',
           salesPerson: sales,
           remarks: 'PWA Demo 測試訂單',
-          signature: createDemoSignature()
+          signature: signaturePad.toDataURL()
         };
 
         document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -370,18 +429,6 @@
             alert('訂單處理失敗：' + err.message);
           }
         });
-      }
-
-      // Demo 用的空白簽名（1x1 透明 PNG base64）
-      function createDemoSignature() {
-        var canvas = document.createElement('canvas');
-        canvas.width = 200;
-        canvas.height = 100;
-        var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ccc';
-        ctx.font = '20px sans-serif';
-        ctx.fillText('Demo', 60, 55);
-        return canvas.toDataURL('image/png');
       }
 
       // ============================================================
@@ -517,6 +564,7 @@
         document.getElementById('customerName').value = '';
         document.getElementById('phone').value = '';
         document.getElementById('salesPerson').value = '';
+        signaturePad.clear();
       }
 
       // ============================================================
