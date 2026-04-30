@@ -639,11 +639,12 @@
         })
         .catch(err => {
           document.getElementById('loadingOverlay').classList.add('hidden');
-          if (!navigator.onLine) {
+          // TypeError = fetch 無法連線（離線、DNS 失敗、CORS preflight 被擋等網路層錯誤）
+          const isNetworkError = err instanceof TypeError || !navigator.onLine;
+          if (isNetworkError) {
             addToOfflineQueue(orderData);
             renderReceiptTo('doneContent', orderData);
             document.getElementById('doneOverlay').classList.remove('hidden');
-            // 告知使用者此為離線暫存
             const bar = document.querySelector('#doneOverlay .bar-title');
             if (bar) bar.textContent = '⚠️ 離線暫存（連線後自動送出）';
           } else {
