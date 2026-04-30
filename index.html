@@ -355,7 +355,6 @@
       // 部署後請替換為實際的 GAS Web App deployment URL
       const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbz3o8_XROmxbfhrN9_tNwS_VlSOyOV8dDQgUYg8jCgFo64yo4d4eeQu8W3zmYdZm6-NEw/exec';
 
-      const OFFLINE_QUEUE_KEY = 'offlineOrderQueue';
       const CONFIG_CACHE_KEY = 'cachedConfig';
 
       let configLoaded = false;
@@ -384,9 +383,10 @@
       function clearCanvas() { signaturePad.clear(); }
       window.onresize = resizeCanvas;
 
-      window.addEventListener('DOMContentLoaded', () => {
+      window.addEventListener('DOMContentLoaded', async () => {
         initSignaturePad();
         registerSW();
+        await migrateFromLocalStorage();
         loadConfig();
         updateOnlineStatus();
         updateQueueUI();
@@ -638,12 +638,11 @@
           renderReceiptTo('doneContent', orderData);
           document.getElementById('doneOverlay').classList.remove('hidden');
         })
-        .catch(err => {
+        .catch(async err => {
           document.getElementById('loadingOverlay').classList.add('hidden');
-          // TypeError = fetch 無法連線（離線、DNS 失敗、CORS preflight 被擋等網路層錯誤）
           const isNetworkError = err instanceof TypeError || !navigator.onLine;
           if (isNetworkError) {
-            addToOfflineQueue(orderData);
+            await addToOfflineQueue(orderData);
             renderReceiptTo('doneContent', orderData);
             document.getElementById('doneOverlay').classList.remove('hidden');
             const bar = document.querySelector('#doneOverlay .bar-title');
@@ -655,75 +654,131 @@
       }
 
       // ============================================================
-      // 離線訂單佇列
+      // IndexedDB 離線訂單佇列
       // ============================================================
-      function getOfflineQueue() {
+      const IDB_NAME = 'fangzih_queue';
+      const IDB_STORE = 'orders';
+      let _idb = null;
+      let isRetrying = false;
+
+      function openDB() {
+        if (_idb) return Promise.resolve(_idb);
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(IDB_NAME, 1);
+          req.onupgradeneeded = e => {
+            e.target.result.createObjectStore(IDB_STORE, { keyPath: 'id' });
+          };
+          req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      async function dbGetAll() {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAll();
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      async function dbPut(item) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const req = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(item);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      async function dbDelete(id) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const req = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).delete(id);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      // 從 localStorage 遷移舊資料（一次性）
+      async function migrateFromLocalStorage() {
+        const old = localStorage.getItem('offlineOrderQueue');
+        if (!old) return;
         try {
-          return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-        } catch (e) { return []; }
+          const items = JSON.parse(old);
+          for (const item of items) { await dbPut(item); }
+          localStorage.removeItem('offlineOrderQueue');
+        } catch (e) { console.warn('Migration failed:', e); }
       }
 
-      function saveOfflineQueue(queue) {
-        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-      }
-
-      function addToOfflineQueue(orderData) {
-        const queue = getOfflineQueue();
-        queue.push({
+      async function addToOfflineQueue(orderData) {
+        const item = {
           id: 'local-' + Date.now(),
           timestamp: Date.now(),
           customerName: orderData.customerName,
           phone: orderData.phone,
           orderData: orderData,
           status: 'pending',
-          retryCount: 0
-        });
-        saveOfflineQueue(queue);
+          retryCount: 0,
+          errorMsg: ''
+        };
+        await dbPut(item);
         updateQueueUI();
       }
 
-      function removeFromQueue(id) {
-        const queue = getOfflineQueue().filter(item => item.id !== id);
-        saveOfflineQueue(queue);
+      async function removeFromQueue(id) {
+        await dbDelete(id);
         updateQueueUI();
       }
 
       async function retryOfflineQueue() {
-        const queue = getOfflineQueue();
-        const pending = queue.filter(item => item.status === 'pending' || item.status === 'failed');
-        if (pending.length === 0) return;
+        if (isRetrying) return;          // 防止併發重複送出
+        isRetrying = true;
+        try {
+          const queue = await dbGetAll();
+          const pending = queue.filter(item => item.status === 'pending' || item.status === 'failed');
+          if (pending.length === 0) return;
 
-        for (const item of pending) {
-          try {
-            const response = await fetch(GAS_API_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain' },
-              body: JSON.stringify({ action: 'processOrder', data: item.orderData })
-            });
-            const result = await response.json();
-            if (result.error) throw new Error(result.error);
+          for (const item of pending) {
+            try {
+              const response = await fetch(GAS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'processOrder', data: item.orderData })
+              });
+              const result = await response.json();
+              if (result.error) throw new Error('SERVER:' + result.error);
 
-            // 成功：從佇列移除
-            removeFromQueue(item.id);
-          } catch (err) {
-            // 失敗：更新狀態
-            item.retryCount++;
-            if (item.retryCount > 5) item.status = 'failed';
-            const q = getOfflineQueue();
-            const idx = q.findIndex(x => x.id === item.id);
-            if (idx !== -1) { q[idx] = item; saveOfflineQueue(q); }
-            updateQueueUI();
+              await dbDelete(item.id);   // 成功：移除
+              updateQueueUI();
+            } catch (err) {
+              const isServerError = err.message.startsWith('SERVER:');
+              if (isServerError) {
+                // 伺服器明確回傳錯誤 → 計次，超過 5 次標 failed
+                item.retryCount = (item.retryCount || 0) + 1;
+                if (item.retryCount >= 5) {
+                  item.status = 'failed';
+                  item.errorMsg = err.message.replace('SERVER:', '');
+                }
+              }
+              // 網路錯誤不計次數，下次連線再試
+              await dbPut(item);
+              updateQueueUI();
+            }
           }
+        } finally {
+          isRetrying = false;
         }
       }
 
-      function retryOne(id) {
-        const queue = getOfflineQueue();
+      async function retryOne(id) {
+        const queue = await dbGetAll();
         const item = queue.find(x => x.id === id);
         if (!item) return;
         item.status = 'pending';
         item.retryCount = 0;
-        saveOfflineQueue(queue);
+        item.errorMsg = '';
+        await dbPut(item);
         updateQueueUI();
         retryOfflineQueue();
       }
@@ -740,8 +795,8 @@
         }
       }
 
-      function updateQueueUI() {
-        const queue = getOfflineQueue();
+      async function updateQueueUI() {
+        const queue = await dbGetAll();
         const count = queue.length;
         const queueBanner = document.getElementById('queueBanner');
         const queueSection = document.getElementById('queueSection');
@@ -755,7 +810,6 @@
           queueSection.style.display = 'none';
         }
 
-        // 渲染佇列清單
         const list = document.getElementById('queueList');
         list.innerHTML = '';
         queue.forEach(item => {
@@ -767,8 +821,9 @@
             `<div class="info">
               <div><b>${item.customerName}</b> | ${item.phone}</div>
               <div style="font-size:11px;color:var(--text-light);">${time}</div>
+              ${isFailed && item.errorMsg ? `<div style="font-size:11px;color:#e53935;">錯誤：${item.errorMsg}</div>` : ''}
             </div>
-            <span class="status ${isFailed ? 'failed' : ''}">${isFailed ? '失敗' : '等待中'}</span>
+            <span class="status ${isFailed ? 'failed' : ''}">${isFailed ? '伺服器錯誤' : '等待中'}</span>
             ${isFailed ? `<button onclick="retryOne('${item.id}')">重試</button>` : ''}`;
           list.appendChild(div);
         });
