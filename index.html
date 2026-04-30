@@ -390,6 +390,7 @@
         loadConfig();
         updateOnlineStatus();
         updateQueueUI();
+        if (navigator.onLine) retryOfflineQueue();
       });
 
       window.addEventListener('online', () => {
