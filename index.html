@@ -262,11 +262,14 @@
       .qr-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #eee; text-align: center; }
       .qr-label { font-size: 11px; color: #888; margin-bottom: 6px; font-weight: 600; }
       @media print {
+        /* 只印收據，隱藏其他所有內容 */
+        .header, #offlineBanner, #queueBanner, #loadingOverlay, .container { display: none !important; }
+        /* 隱藏所有 overlay，再把當前顯示的那個顯示出來 */
+        .receipt-overlay { display: none !important; }
+        .receipt-overlay:not(.hidden) { display: block !important; position: static !important; overflow: visible !important; height: auto !important; background: #fff !important; }
         .receipt-action-bar { display: none !important; }
-        .receipt-overlay { position: static; overflow: visible; background: #fff; }
-        .receipt-wrap { border: none; padding: 10px; max-width: 100%; margin: 0; }
-        .offline-banner, .queue-banner, .header { display: none !important; }
-        /* 顧客聯：隱藏 QR section */
+        .receipt-wrap { border: none !important; padding: 10px !important; max-width: 100% !important; margin: 0 !important; }
+        /* 顧客聯（預設）：隱藏 QR */
         .qr-section { display: none !important; }
         /* 內部聯：顯示 QR，隱藏簽名圖片 */
         body.print-internal .qr-section { display: block !important; }
