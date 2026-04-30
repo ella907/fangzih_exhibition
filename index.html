@@ -176,6 +176,80 @@
         cursor: pointer;
       }
       .btn-clear:active { background: #f0f0f0; }
+
+      /* ── 收據 overlay ── */
+      .receipt-overlay {
+        position: fixed; inset: 0; z-index: 300;
+        background: #f0f0f0; overflow-y: auto;
+      }
+      .receipt-overlay.hidden { display: none; }
+      .receipt-action-bar {
+        position: sticky; top: 0; z-index: 10;
+        background: #1a2e5a;
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 12px; flex-wrap: wrap;
+      }
+      .receipt-action-bar .bar-title {
+        color: #fff; font-size: 14px; font-weight: 700; flex: 1;
+      }
+      .bar-btn {
+        border: none; border-radius: 8px;
+        padding: 8px 14px; font-size: 13px; font-weight: 700;
+        cursor: pointer; white-space: nowrap;
+      }
+      .bar-btn.primary { background: var(--primary); color: #fff; }
+      .bar-btn.light   { background: #fff; color: #1a2e5a; }
+
+      /* ── 收據本體 ── */
+      .receipt-wrap {
+        max-width: 640px; margin: 14px auto;
+        background: #fff; border: 1px solid #ccc;
+        padding: 20px 22px;
+      }
+      .r-header {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        border-bottom: 3px solid #1a2e5a; padding-bottom: 10px; margin-bottom: 14px;
+      }
+      .r-brand { font-size: 24px; font-weight: 900; color: var(--primary); letter-spacing: 2px; }
+      .r-brand-sub { font-size: 11px; color: #666; margin-top: 2px; }
+      .r-meta { text-align: right; font-size: 12px; color: #555; line-height: 1.7; }
+      .r-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 0; }
+      .r-table th, .r-table td { border: 1px solid #bbb; padding: 6px 9px; vertical-align: top; }
+      .r-table th { background: #1a2e5a; color: #fff; font-size: 12px; text-align: center; white-space: nowrap; }
+      .r-table .lbl { background: #f4f6fb; font-weight: 600; color: #1a2e5a; white-space: nowrap; width: 80px; }
+      .r-table .sec { background: #1a2e5a; color: #fff; font-weight: 700; font-size: 12px; padding: 5px 9px; letter-spacing: 1px; }
+      .r-table .center { text-align: center; }
+      .r-table tr.subtotal td { background: #fff8f9; font-weight: 700; color: var(--primary); text-align: right; }
+      .pay-row {
+        display: flex; gap: 16px; align-items: center;
+        padding: 8px 9px; border: 1px solid #bbb; border-top: none;
+        background: #fafafa; font-size: 13px; pointer-events: none;
+      }
+      .pay-row label { display: flex; align-items: center; gap: 5px; font-weight: 600; cursor: default; }
+      .pay-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); pointer-events: none; opacity: 1 !important; }
+      .pay-row .transfer-info { font-size: 12px; color: #555; margin-left: auto; }
+      .amount-block { border: 1px solid #bbb; border-top: none; }
+      .amount-row { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 13px; border-bottom: 1px solid #eee; }
+      .amount-row:last-child { border-bottom: none; }
+      .amount-row.discount { color: #c00; }
+      .amount-row.total { background: #1a2e5a; color: #fff; font-size: 16px; font-weight: 900; padding: 10px 12px; }
+      .amount-row .albl { font-weight: 600; }
+      .sign-section { border: 1px solid #bbb; border-top: none; padding: 10px 12px 14px; }
+      .sign-label { font-size: 12px; font-weight: 700; color: #1a2e5a; margin-bottom: 6px; }
+      .sign-box {
+        border: 1px dashed #aaa; border-radius: 4px;
+        height: 90px; background: #fafafa;
+        display: flex; align-items: center; justify-content: center; overflow: hidden;
+      }
+      .sign-box img { max-height: 80px; max-width: 100%; object-fit: contain; }
+      .r-footer { margin-top: 12px; text-align: center; font-size: 11px; color: #aaa; border-top: 1px solid #eee; padding-top: 10px; }
+
+      @media print {
+        .receipt-action-bar { display: none !important; }
+        .receipt-overlay { position: static; overflow: visible; background: #fff; }
+        .receipt-wrap { border: none; padding: 10px; max-width: 100%; margin: 0; }
+        .offline-banner, .queue-banner, .header { display: none !important; }
+      }
     </style>
   </head>
   <body>
@@ -253,13 +327,25 @@
       </div>
     </div>
 
-    <!-- Done -->
-    <div id="doneOverlay" class="overlay hidden">
-      <div class="done-box">
-        <h2>訂單已完成</h2>
-        <p>PDF 收據已生成</p>
-        <button onclick="resetForm()">建立新訂單</button>
+    <!-- 預覽收據（送出前確認）-->
+    <div id="previewOverlay" class="receipt-overlay hidden">
+      <div class="receipt-action-bar">
+        <span class="bar-title">訂單預覽確認</span>
+        <button class="bar-btn light"  onclick="window.print()">🖨 列印</button>
+        <button class="bar-btn light"  onclick="closePreview()">← 返回修改</button>
+        <button class="bar-btn primary" onclick="submitOrder()">確認送出</button>
       </div>
+      <div class="receipt-wrap" id="previewContent"></div>
+    </div>
+
+    <!-- 完成收據 -->
+    <div id="doneOverlay" class="receipt-overlay hidden">
+      <div class="receipt-action-bar">
+        <span class="bar-title">✓ 訂單已送出</span>
+        <button class="bar-btn light"  onclick="window.print()">🖨 列印收據</button>
+        <button class="bar-btn primary" onclick="resetForm()">建立新訂單</button>
+      </div>
+      <div class="receipt-wrap" id="doneContent"></div>
     </div>
 
     <script>
@@ -370,16 +456,135 @@
       }
 
       // ============================================================
+      // 收據渲染
+      // ============================================================
+      let cachedOrderData = null;
+
+      function renderReceiptTo(targetId, d) {
+        const allocations = JSON.parse(d.allocations || '[]');
+
+        const itemRows = d.items ? d.items.split('、').map(line =>
+          `<tr><td colspan="4" style="font-size:13px; padding-left:12px;">${line}</td></tr>`
+        ).join('') : '<tr><td colspan="4" style="color:#aaa; text-align:center;">—</td></tr>';
+
+        const allocRows = allocations.length ? allocations.map(a => {
+          const delivDate = a.deliveryBatch === 1 ? (d.deliveryDate1 || '') : (a.deliveryBatch === 2 ? (d.deliveryDate2 || '') : '');
+          return `<tr>
+            <td>${a.name}${a.source === 'single' ? '（單品）' : a.source === 'comboProduct' ? '（固定組合）' : ''}</td>
+            <td class="center">${a.pickup > 0 ? a.pickup : '—'}</td>
+            <td class="center">${a.delivery > 0 ? a.delivery : '—'}</td>
+            <td class="center">${a.delivery > 0 && delivDate ? delivDate : (a.delivery > 0 ? '—' : '')}</td>
+            <td class="center">${a.store > 0 ? a.store : '—'}</td>
+          </tr>`;
+        }).join('') : `<tr><td colspan="5" style="color:#aaa; text-align:center;">（Demo）現場取貨</td></tr>`;
+
+        const isCash     = d.payMethod && d.payMethod.includes('現金');
+        const isTransfer = d.payMethod && d.payMethod.includes('匯款');
+        const transferMatch = d.payMethod && d.payMethod.match(/匯款（(\d+)）/);
+        const transferNum = transferMatch ? transferMatch[1] : '';
+
+        let discountRows = '';
+        if (d.comboPrice > 0)     discountRows += `<div class="amount-row"><span class="albl">組合金額</span><span>$${Number(d.comboPrice).toLocaleString()}</span></div>`;
+        if (d.singleItemPrice > 0) discountRows += `<div class="amount-row"><span class="albl">單品金額</span><span>$${Number(d.singleItemPrice).toLocaleString()}</span></div>`;
+        if (d.lineDiscount > 0)    discountRows += `<div class="amount-row discount"><span class="albl">LINE好友折扣</span><span>－$${Number(d.lineDiscount).toLocaleString()}</span></div>`;
+        if (d.pointsDiscount > 0)  discountRows += `<div class="amount-row discount"><span class="albl">購物金折抵</span><span>－$${Number(d.pointsDiscount).toLocaleString()}</span></div>`;
+
+        document.getElementById(targetId).innerHTML = `
+          <div class="r-header">
+            <div>
+              <div class="r-brand">芳茲</div>
+              <div class="r-brand-sub">展場電子收據</div>
+            </div>
+            <div class="r-meta">
+              <div>日期：${d.orderDate || '—'}</div>
+              <div>業務：${d.salesPerson || '—'}</div>
+            </div>
+          </div>
+
+          <table class="r-table">
+            <tr><td class="sec" colspan="4">顧客資訊</td></tr>
+            <tr>
+              <td class="lbl">訂購人</td><td>${d.customerName}</td>
+              <td class="lbl">手機</td><td>${d.phone}</td>
+            </tr>
+            <tr><td class="lbl">收件地址</td><td colspan="3">${d.address || '—'}</td></tr>
+          </table>
+
+          <table class="r-table" style="border-top:none;">
+            <tr><td class="sec" colspan="4">訂購品項</td></tr>
+            <tr><th style="text-align:left;" colspan="3">品項</th><th>小計</th></tr>
+            ${itemRows}
+            <tr class="subtotal">
+              <td colspan="3">組合：${d.combo || '—'}</td>
+              <td>${d.comboPrice > 0 ? '$' + Number(d.comboPrice).toLocaleString() : '（Demo）'}</td>
+            </tr>
+          </table>
+
+          <table class="r-table" style="border-top:none;">
+            <tr><td class="sec" colspan="5">取貨分配</td></tr>
+            <tr>
+              <th style="text-align:left; width:35%">品項</th>
+              <th>現場取</th><th>宅配</th><th>宅配日期</th><th>門市取</th>
+            </tr>
+            ${allocRows}
+          </table>
+
+          <div class="sec" style="border:1px solid #bbb; border-top:none;">付款方式</div>
+          <div class="pay-row">
+            <label><input type="checkbox" ${isCash ? 'checked' : ''} disabled> 現金</label>
+            <label><input type="checkbox" ${isTransfer ? 'checked' : ''} disabled> 匯款</label>
+            ${transferNum ? `<span class="transfer-info">帳號末五碼：${transferNum}</span>` : ''}
+          </div>
+
+          <div class="sec" style="border:1px solid #bbb; border-top:none;">折扣 &amp; 應付金額</div>
+          <div class="amount-block">
+            ${discountRows || '<div class="amount-row"><span class="albl">折扣</span><span>—</span></div>'}
+            <div class="amount-row total">
+              <span class="albl">應付金額</span>
+              <span>${d.amount > 0 ? '$' + Number(d.amount).toLocaleString() : '（Demo）'}</span>
+            </div>
+          </div>
+
+          ${d.remarks ? `<table class="r-table" style="border-top:none;"><tr><td class="lbl">備註</td><td style="font-size:12px;color:#555;">${d.remarks}</td></tr></table>` : ''}
+
+          <div class="sign-section">
+            <div class="sign-label">顧客簽名</div>
+            <div class="sign-box">
+              ${d.signature ? `<img src="${d.signature}" alt="簽名">` : '<span style="color:#ccc;font-size:13px;">（無簽名）</span>'}
+            </div>
+          </div>
+
+          <div class="r-footer">
+            感謝您的購買！如有任何問題請聯繫業務員。<br>
+            此收據由系統自動產生，如需紙本請自行列印保存。
+          </div>
+        `;
+      }
+
+      // ============================================================
+      // 預覽（送出前）
+      // ============================================================
+      function showPreview(orderData) {
+        cachedOrderData = orderData;
+        renderReceiptTo('previewContent', orderData);
+        document.getElementById('previewOverlay').classList.remove('hidden');
+      }
+
+      function closePreview() {
+        document.getElementById('previewOverlay').classList.add('hidden');
+      }
+
+      // ============================================================
       // 送出訂單
       // ============================================================
       function handleSubmit() {
-        const name = document.getElementById('customerName').value.trim();
+        const name  = document.getElementById('customerName').value.trim();
         const phone = document.getElementById('phone').value.trim();
         const sales = document.getElementById('salesPerson').value;
 
-        if (!name) return alert('請輸入訂購人姓名');
+        if (!name)              return alert('請輸入訂購人姓名');
         if (phone.length !== 8) return alert('手機號碼需為 8 碼');
-        if (!sales) return alert('請選擇業務員');
+        if (!sales)             return alert('請選擇業務員');
         if (signaturePad.isEmpty()) return alert('請顧客完成簽名後再送出');
 
         const orderData = {
@@ -389,24 +594,35 @@
           email: '',
           address: 'Demo 測試地址',
           receiver: name,
-          combo: 'Demo 測試組合',
-          comboPrice: 0,
+          combo: 'A展場組合（6包）',
+          comboPrice: 3000,
           singleItemPrice: 0,
-          allocations: '[]',
+          allocations: JSON.stringify([
+            { name: '日月養生滴雞精', source: 'exhibition', pickup: 3, delivery: 3, store: 0, deliveryBatch: 1 },
+            { name: '日月養生滴魚精', source: 'exhibition', pickup: 3, delivery: 0, store: 0, deliveryBatch: 0 },
+          ]),
           allocSummary: 'Demo',
-          items: 'Demo 測試品項',
-          lineDiscount: 0,
+          items: '【展場組合】日月養生滴雞精 x3、【展場組合】日月養生滴魚精 x3',
+          lineDiscount: 50,
           pointsDiscount: 0,
-          amount: 0,
-          deliveryDate1: '',
+          amount: 2950,
+          deliveryDate1: new Date(Date.now() + 14 * 86400000).toLocaleDateString('zh-TW'),
           deliveryDate2: '',
           payMethod: '現金',
-          discounts: '',
+          discounts: 'LINE好友折50',
           salesPerson: sales,
           remarks: 'PWA Demo 測試訂單',
           signature: signaturePad.toDataURL()
         };
 
+        showPreview(orderData);
+      }
+
+      function submitOrder() {
+        const orderData = cachedOrderData;
+        if (!orderData) return;
+
+        closePreview();
         document.getElementById('loadingOverlay').classList.remove('hidden');
 
         fetch(GAS_API_URL, {
@@ -418,13 +634,18 @@
         .then(result => {
           if (result.error) throw new Error(result.error);
           document.getElementById('loadingOverlay').classList.add('hidden');
+          renderReceiptTo('doneContent', orderData);
           document.getElementById('doneOverlay').classList.remove('hidden');
         })
         .catch(err => {
           document.getElementById('loadingOverlay').classList.add('hidden');
           if (!navigator.onLine) {
             addToOfflineQueue(orderData);
-            alert('目前離線，訂單已暫存，恢復連線後將自動送出');
+            renderReceiptTo('doneContent', orderData);
+            document.getElementById('doneOverlay').classList.remove('hidden');
+            // 告知使用者此為離線暫存
+            const bar = document.querySelector('#doneOverlay .bar-title');
+            if (bar) bar.textContent = '⚠️ 離線暫存（連線後自動送出）';
           } else {
             alert('訂單處理失敗：' + err.message);
           }
@@ -561,6 +782,8 @@
       // ============================================================
       function resetForm() {
         document.getElementById('doneOverlay').classList.add('hidden');
+        document.getElementById('previewOverlay').classList.add('hidden');
+        cachedOrderData = null;
         document.getElementById('customerName').value = '';
         document.getElementById('phone').value = '';
         document.getElementById('salesPerson').value = '';
