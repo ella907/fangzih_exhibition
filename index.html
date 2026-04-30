@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="#fb5272">
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <title>展場電子收據系統 (PWA Demo)</title>
     <style>
       :root {
@@ -258,11 +259,18 @@
       .sign-box img { max-height: 80px; max-width: 100%; object-fit: contain; }
       .r-footer { margin-top: 12px; text-align: center; font-size: 11px; color: #aaa; border-top: 1px solid #eee; padding-top: 10px; }
 
+      .qr-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #eee; text-align: center; }
+      .qr-label { font-size: 11px; color: #888; margin-bottom: 6px; font-weight: 600; }
       @media print {
         .receipt-action-bar { display: none !important; }
         .receipt-overlay { position: static; overflow: visible; background: #fff; }
         .receipt-wrap { border: none; padding: 10px; max-width: 100%; margin: 0; }
         .offline-banner, .queue-banner, .header { display: none !important; }
+        /* 顧客聯：隱藏 QR section */
+        .qr-section { display: none !important; }
+        /* 內部聯：顯示 QR，隱藏簽名圖片 */
+        body.print-internal .qr-section { display: block !important; }
+        body.print-internal .sign-box img { visibility: hidden; }
       }
     </style>
   </head>
@@ -354,8 +362,9 @@
     <div id="previewOverlay" class="receipt-overlay hidden">
       <div class="receipt-action-bar">
         <span class="bar-title">訂單預覽確認</span>
-        <button class="bar-btn light"  onclick="window.print()">🖨 列印</button>
-        <button class="bar-btn light"  onclick="closePreview()">← 返回修改</button>
+        <button class="bar-btn light" onclick="printMode('customer')">🖨 顧客聯</button>
+        <button class="bar-btn light" onclick="printMode('internal')">🖨 內部聯</button>
+        <button class="bar-btn light" onclick="closePreview()">← 返回修改</button>
         <button class="bar-btn primary" onclick="submitOrder()">確認送出</button>
       </div>
       <div class="receipt-wrap" id="previewContent"></div>
@@ -365,7 +374,8 @@
     <div id="doneOverlay" class="receipt-overlay hidden">
       <div class="receipt-action-bar">
         <span class="bar-title">✓ 訂單已送出</span>
-        <button class="bar-btn light"  onclick="window.print()">🖨 列印收據</button>
+        <button class="bar-btn light" onclick="printMode('customer')">🖨 顧客聯</button>
+        <button class="bar-btn light" onclick="printMode('internal')">🖨 內部聯</button>
         <button class="bar-btn primary" onclick="resetForm()">建立新訂單</button>
       </div>
       <div class="receipt-wrap" id="doneContent"></div>
@@ -585,7 +595,28 @@
             感謝您的購買！如有任何問題請聯繫業務員。<br>
             此收據由系統自動產生，如需紙本請自行列印保存。
           </div>
+
+          <div class="qr-section" id="qrSection_${targetId}">
+            <div class="qr-label">【內部聯】掃描 QR 碼可補寫入訂單資料至 Sheet</div>
+            <canvas id="qrCanvas_${targetId}"></canvas>
+          </div>
         `;
+
+        // 生成 QR 碼（非同步，GAS_API_URL 本身就是 exec URL）
+        if (d.orderId && typeof QRCode !== 'undefined') {
+          try {
+            const noSig = Object.assign({}, d);
+            delete noSig.signature;
+            const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(noSig))));
+            const recoverUrl = GAS_API_URL + '?recover=' + encoded;
+            const canvas = document.getElementById('qrCanvas_' + targetId);
+            if (canvas) {
+              QRCode.toCanvas(canvas, recoverUrl, { width: 128, errorCorrectionLevel: 'M' }, function(err) {
+                if (err) console.warn('QR 生成失敗:', err);
+              });
+            }
+          } catch(qrErr) { console.warn('QR 編碼失敗:', qrErr); }
+        }
       }
 
       // ============================================================
@@ -599,6 +630,14 @@
 
       function closePreview() {
         document.getElementById('previewOverlay').classList.add('hidden');
+      }
+
+      // mode: 'customer'（顧客聯，隱藏QR）| 'internal'（內部聯，顯示QR，隱藏簽名）
+      function printMode(mode) {
+        document.body.classList.remove('print-customer', 'print-internal');
+        document.body.classList.add('print-' + mode);
+        window.print();
+        setTimeout(() => document.body.classList.remove('print-customer', 'print-internal'), 500);
       }
 
       // ============================================================
@@ -639,6 +678,7 @@
           discounts: 'LINE好友折50',
           salesPerson: sales,
           remarks: 'PWA Demo 測試訂單',
+          orderId: 'ORD-' + Date.now(),
           signature: signaturePad.toDataURL()
         };
 

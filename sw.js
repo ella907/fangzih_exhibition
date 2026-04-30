@@ -1,9 +1,10 @@
-const CACHE_NAME = 'pwa-demo-v2';
+const CACHE_NAME = 'pwa-demo-v3';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.json',
-  'https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js'
+  'https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js'
 ];
 
 // Install: pre-cache app shell
