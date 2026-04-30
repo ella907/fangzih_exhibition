@@ -150,6 +150,20 @@
         text-align: center; padding: 8px; font-size: 12px; color: var(--text-light);
       }
 
+      /* 草稿提示列 */
+      .draft-bar {
+        display: flex; justify-content: space-between; align-items: center;
+        background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px;
+        padding: 10px 14px; margin-bottom: 10px; font-size: 13px; font-weight: 600; color: #795548;
+      }
+      .draft-bar.hidden { display: none; }
+      .draft-bar-actions { display: flex; gap: 8px; }
+      .draft-bar-actions button {
+        padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; border: none;
+      }
+      .draft-restore { background: var(--primary); color: #fff; }
+      .draft-dismiss { background: #eee; color: #555; }
+
       /* 簽名區 */
       .signature-wrapper {
         border: 2px dashed var(--border);
@@ -266,6 +280,15 @@
       <div id="configStatus" class="config-status">載入設定中...</div>
 
       <!-- 表單 -->
+      <!-- 草稿提示 -->
+      <div id="draftBar" class="draft-bar hidden">
+        <span>📝 有未完成的訂單草稿</span>
+        <div class="draft-bar-actions">
+          <button class="draft-restore" onclick="loadDraft()">恢復</button>
+          <button class="draft-dismiss" onclick="clearDraft()">捨棄</button>
+        </div>
+      </div>
+
       <div id="formContainer" style="opacity:0.4; pointer-events:none;">
 
         <div class="section">
@@ -273,20 +296,20 @@
 
           <div class="field">
             <label>訂購人姓名<span class="required">*</span></label>
-            <input type="text" id="customerName" placeholder="請輸入姓名">
+            <input type="text" id="customerName" placeholder="請輸入姓名" oninput="saveDraft()">
           </div>
 
           <div class="field">
             <label>手機號碼<span class="required">*</span></label>
             <div class="phone-group">
               <span class="phone-prefix">09</span>
-              <input type="tel" id="phone" maxlength="8" placeholder="12345678" inputmode="numeric">
+              <input type="tel" id="phone" maxlength="8" placeholder="12345678" inputmode="numeric" oninput="saveDraft()">
             </div>
           </div>
 
           <div class="field">
             <label>負責業務<span class="required">*</span></label>
-            <select id="salesPerson">
+            <select id="salesPerson" onchange="saveDraft()">
               <option value="">載入中...</option>
             </select>
           </div>
@@ -370,6 +393,7 @@
       function initSignaturePad() {
         const canvas = document.getElementById('signature-pad');
         signaturePad = new SignaturePad(canvas);
+        signaturePad.addEventListener('endStroke', saveDraft);
         resizeCanvas();
       }
       function resizeCanvas() {
@@ -390,6 +414,7 @@
         loadConfig();
         updateOnlineStatus();
         updateQueueUI();
+        checkDraft();
         if (navigator.onLine) retryOfflineQueue();
       });
 
@@ -635,6 +660,7 @@
         .then(result => {
           if (result.error) throw new Error(result.error);
           document.getElementById('loadingOverlay').classList.add('hidden');
+          clearDraft();
           renderReceiptTo('doneContent', orderData);
           document.getElementById('doneOverlay').classList.remove('hidden');
         })
@@ -643,6 +669,7 @@
           const isNetworkError = err instanceof TypeError || !navigator.onLine;
           if (isNetworkError) {
             await addToOfflineQueue(orderData);
+            clearDraft();
             renderReceiptTo('doneContent', orderData);
             document.getElementById('doneOverlay').classList.remove('hidden');
             const bar = document.querySelector('#doneOverlay .bar-title');
@@ -835,6 +862,62 @@
       }
 
       // ============================================================
+      // 草稿自動存取
+      // ============================================================
+      const DRAFT_KEY = 'pwaDraft_v1';
+      let draftTimer = null;
+
+      function saveDraft() {
+        clearTimeout(draftTimer);
+        draftTimer = setTimeout(() => {
+          const draft = {
+            customerName: document.getElementById('customerName').value,
+            phone: document.getElementById('phone').value,
+            salesPerson: document.getElementById('salesPerson').value,
+            signature: signaturePad && !signaturePad.isEmpty() ? signaturePad.toDataURL() : '',
+            savedAt: Date.now()
+          };
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        }, 500);
+      }
+
+      function loadDraft() {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        try {
+          const draft = JSON.parse(raw);
+          document.getElementById('customerName').value = draft.customerName || '';
+          document.getElementById('phone').value = draft.phone || '';
+          if (draft.salesPerson) document.getElementById('salesPerson').value = draft.salesPerson;
+          if (draft.signature && signaturePad) {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = signaturePad.canvas || document.getElementById('signature-pad');
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+            img.src = draft.signature;
+          }
+        } catch (e) { console.warn('loadDraft failed:', e); }
+        document.getElementById('draftBar').classList.add('hidden');
+      }
+
+      function clearDraft() {
+        localStorage.removeItem(DRAFT_KEY);
+        document.getElementById('draftBar').classList.add('hidden');
+      }
+
+      function checkDraft() {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        try {
+          const draft = JSON.parse(raw);
+          const hasContent = draft.customerName || draft.phone || draft.signature;
+          if (hasContent) document.getElementById('draftBar').classList.remove('hidden');
+        } catch (e) { clearDraft(); }
+      }
+
+      // ============================================================
       // 重置
       // ============================================================
       function resetForm() {
@@ -845,6 +928,7 @@
         document.getElementById('phone').value = '';
         document.getElementById('salesPerson').value = '';
         signaturePad.clear();
+        clearDraft();
       }
 
       // ============================================================
