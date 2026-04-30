@@ -603,25 +603,38 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
           <div class="qr-section" id="qrSection_${targetId}">
             <div class="qr-label">【內部聯】掃描 QR 碼可補寫入訂單資料至 Sheet</div>
-            <div id="qrBox_${targetId}" style="display:inline-flex; align-items:center; justify-content:center; width:144px; height:144px; border:1px solid #ddd; border-radius:4px; background:#fff; margin:4px auto;"></div>
+            <div id="qrBox_${targetId}" style="display:inline-flex; align-items:center; justify-content:center; width:200px; height:200px; border:1px solid #ddd; border-radius:4px; background:#fff; margin:4px auto;"></div>
             <div style="font-size:10px; color:#aaa; margin-top:4px;">${d.orderId || ''}</div>
           </div>
         `;
 
-        // 生成 QR 碼（qrcodejs 已內嵌，完全離線可用）
+        // 生成 QR 碼（壓縮 payload 縮短內容，qrcodejs 400px 渲染顯示 200px）
         (function() {
           const qrBox = document.getElementById('qrBox_' + targetId);
           if (!qrBox) return;
           if (!d.orderId) { qrBox.innerHTML = '<span style="font-size:11px;color:#aaa;text-align:center;">無訂單編號</span>'; return; }
           try {
-            const noSig = Object.assign({}, d);
-            delete noSig.signature;
-            const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(noSig))));
+            const allocs = JSON.parse(d.allocations || '[]');
+            const ca = allocs.map(function(a) {
+              return { n: a.name||'', sn: a.shortName||'', pu: a.pickup||0, dv: a.delivery||0, st: a.store||0, db: a.deliveryBatch||0, pn: a.productName||'', sc: a.spec||'' };
+            });
+            const payload = {
+              v: 2, oid: d.orderId, cn: d.customerName||'', rv: d.receiver||d.customerName||'',
+              ph: d.phone||'', dt: d.orderDate||'', sl: d.salesPerson||'',
+              pm: d.payMethod||'', ld: d.lineDiscount||0, pt: d.pointsDiscount||0,
+              amt: d.finalAmount||d.amount||0, cb: d.combo||'', cp: d.comboPrice||0,
+              si: d.singleItemPrice||0, as: d.allocSummary||'',
+              em: d.email||'', ad: d.address||'',
+              d1: d.deliveryDate1||'', d2: d.deliveryDate2||'',
+              rm: d.remarks||'', it: d.items||'', al: JSON.stringify(ca)
+            };
+            const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
             const recoverUrl = GAS_API_URL + '?recover=' + encoded;
-            const dpr = Math.ceil(window.devicePixelRatio || 1);
-            new QRCode(qrBox, { text: recoverUrl, width: 128 * dpr, height: 128 * dpr, correctLevel: QRCode.CorrectLevel.M });
-            const qrEl = qrBox.firstChild;
-            if (qrEl) { qrEl.style.width = '128px'; qrEl.style.height = '128px'; }
+            new QRCode(qrBox, { text: recoverUrl, width: 400, height: 400, correctLevel: QRCode.CorrectLevel.L });
+            const cvs = qrBox.querySelector('canvas');
+            if (cvs) { cvs.style.width = '200px'; cvs.style.height = '200px'; }
+            const img = qrBox.querySelector('img');
+            if (img) { img.style.width = '200px'; img.style.height = '200px'; img.onload = function(){ this.style.width='200px'; this.style.height='200px'; }; }
           } catch(e) { qrBox.innerHTML = '<span style="font-size:11px;color:#c00;">錯誤：' + e.message + '</span>'; }
         })();
       }
