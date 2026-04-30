@@ -606,23 +606,34 @@
           </div>
         `;
 
-        // 生成 QR 碼
+        // 生成 QR 碼（QRCode.js 優先，失敗時用 Google Charts API 備援）
         (function() {
           const qrBox = document.getElementById('qrBox_' + targetId);
-          if (!qrBox) return;
-          if (!d.orderId) { qrBox.innerHTML = '<span style="font-size:11px;color:#aaa;text-align:center;">無訂單編號</span>'; return; }
-          if (typeof QRCode === 'undefined') { qrBox.innerHTML = '<span style="font-size:11px;color:#aaa;text-align:center;">QR程式庫<br>未載入</span>'; return; }
+          if (!qrBox || !d.orderId) return;
           try {
             const noSig = Object.assign({}, d);
             delete noSig.signature;
             const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(noSig))));
             const recoverUrl = GAS_API_URL + '?recover=' + encoded;
-            const canvas = document.createElement('canvas');
-            qrBox.appendChild(canvas);
-            QRCode.toCanvas(canvas, recoverUrl, { width: 128, margin: 1, errorCorrectionLevel: 'M' }, function(err) {
-              if (err) { qrBox.innerHTML = '<span style="font-size:11px;color:#c00;">QR生成失敗：' + err.message + '</span>'; }
-            });
+            if (typeof QRCode !== 'undefined') {
+              const canvas = document.createElement('canvas');
+              qrBox.appendChild(canvas);
+              QRCode.toCanvas(canvas, recoverUrl, { width: 128, margin: 1, errorCorrectionLevel: 'M' }, function(err) {
+                if (err) { useGoogleCharts(qrBox, recoverUrl); }
+              });
+            } else {
+              useGoogleCharts(qrBox, recoverUrl);
+            }
           } catch(e) { qrBox.innerHTML = '<span style="font-size:11px;color:#c00;">錯誤：' + e.message + '</span>'; }
+
+          function useGoogleCharts(box, url) {
+            const img = document.createElement('img');
+            img.width = 128; img.height = 128; img.alt = 'QR碼';
+            img.onerror = function() { box.innerHTML = '<span style="font-size:11px;color:#c00;">QR載入失敗<br>（需網路）</span>'; };
+            img.src = 'https://chart.googleapis.com/chart?cht=qr&chs=128x128&choe=UTF-8&chl=' + encodeURIComponent(url);
+            box.innerHTML = '';
+            box.appendChild(img);
+          }
         })();
       }
 
