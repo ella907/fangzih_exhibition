@@ -601,25 +601,29 @@
 
           <div class="qr-section" id="qrSection_${targetId}">
             <div class="qr-label">【內部聯】掃描 QR 碼可補寫入訂單資料至 Sheet</div>
-            <canvas id="qrCanvas_${targetId}"></canvas>
+            <div id="qrBox_${targetId}" style="display:inline-flex; align-items:center; justify-content:center; width:144px; height:144px; border:1px solid #ddd; border-radius:4px; background:#fff; margin:4px auto;"></div>
+            <div style="font-size:10px; color:#aaa; margin-top:4px;">${d.orderId || ''}</div>
           </div>
         `;
 
-        // 生成 QR 碼（非同步，GAS_API_URL 本身就是 exec URL）
-        if (d.orderId && typeof QRCode !== 'undefined') {
+        // 生成 QR 碼
+        (function() {
+          const qrBox = document.getElementById('qrBox_' + targetId);
+          if (!qrBox) return;
+          if (!d.orderId) { qrBox.innerHTML = '<span style="font-size:11px;color:#aaa;text-align:center;">無訂單編號</span>'; return; }
+          if (typeof QRCode === 'undefined') { qrBox.innerHTML = '<span style="font-size:11px;color:#aaa;text-align:center;">QR程式庫<br>未載入</span>'; return; }
           try {
             const noSig = Object.assign({}, d);
             delete noSig.signature;
             const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(noSig))));
             const recoverUrl = GAS_API_URL + '?recover=' + encoded;
-            const canvas = document.getElementById('qrCanvas_' + targetId);
-            if (canvas) {
-              QRCode.toCanvas(canvas, recoverUrl, { width: 128, errorCorrectionLevel: 'M' }, function(err) {
-                if (err) console.warn('QR 生成失敗:', err);
-              });
-            }
-          } catch(qrErr) { console.warn('QR 編碼失敗:', qrErr); }
-        }
+            const canvas = document.createElement('canvas');
+            qrBox.appendChild(canvas);
+            QRCode.toCanvas(canvas, recoverUrl, { width: 128, margin: 1, errorCorrectionLevel: 'M' }, function(err) {
+              if (err) { qrBox.innerHTML = '<span style="font-size:11px;color:#c00;">QR生成失敗：' + err.message + '</span>'; }
+            });
+          } catch(e) { qrBox.innerHTML = '<span style="font-size:11px;color:#c00;">錯誤：' + e.message + '</span>'; }
+        })();
       }
 
       // ============================================================
